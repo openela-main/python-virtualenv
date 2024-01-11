@@ -1,0 +1,102 @@
+diff --git a/tests/test_virtualenv.py b/tests/test_virtualenv.py
+index ce45ede..7946a16 100644
+--- a/tests/test_virtualenv.py
++++ b/tests/test_virtualenv.py
+@@ -4,11 +4,16 @@ import os
+ import shutil
+ import sys
+ import tempfile
++import zipfile
+ import pytest
+ import platform  # noqa
+ 
+ from mock import patch, Mock
+ 
++try:
++    from pathlib import Path
++except ImportError:
++    from pathlib2 import Path
+ 
+ def test_version():
+     """Should have a version string"""
+@@ -139,3 +144,44 @@ def test_always_copy_option():
+                     " symlink (to %s)" % (full_name, os.readlink(full_name))
+     finally:
+         shutil.rmtree(tmp_virtualenv)
++
++
++def test_missing_certifi_pem(tmp_path):
++    """Make sure that we can still create virtual environment if pip is
++    patched to not use certifi's cacert.pem and the file is removed.
++    This can happen if pip is packaged by Linux distributions."""
++    proj_dir = Path(__file__).parent.parent
++    support_original = proj_dir / "virtualenv_support"
++    pip_wheel = sorted(support_original.glob("pip*whl"))[0]
++    whl_name = pip_wheel.name
++
++    wheeldir = tmp_path / "wheels"
++    wheeldir.mkdir()
++    tmpcert = tmp_path / "tmpcert.pem"
++    cacert = "pip/_vendor/requests/cacert.pem"
++    certifi = "pip/_vendor/requests/certs.py"
++    oldpath = b"os.path.join(os.path.dirname(__file__), 'cacert.pem')"
++    newpath = "r'{}'".format(tmpcert).encode()
++    removed = False
++    replaced = False
++
++    with zipfile.ZipFile(str(pip_wheel), "r") as whlin:
++        with zipfile.ZipFile(str(wheeldir / whl_name), "w") as whlout:
++            for item in whlin.infolist():
++                buff = whlin.read(item.filename)
++                if item.filename == cacert:
++                    tmpcert.write_bytes(buff)
++                    removed = True
++                    continue
++                if item.filename == certifi:
++                    nbuff = buff.replace(oldpath, newpath)
++                    assert nbuff != buff
++                    buff = nbuff
++                    replaced = True
++                whlout.writestr(item, buff)
++
++    assert removed and replaced
++
++    venvdir = tmp_path / "venv"
++    search_dirs = [str(wheeldir), str(support_original)]
++    virtualenv.create_environment(str(venvdir), search_dirs=search_dirs)
+diff --git a/virtualenv.egg-info/PKG-INFO b/virtualenv.egg-info/PKG-INFO
+index 11f5c75..501e81a 100644
+--- a/virtualenv.egg-info/PKG-INFO
++++ b/virtualenv.egg-info/PKG-INFO
+@@ -1,10 +1,12 @@
+-Metadata-Version: 1.1
++Metadata-Version: 1.2
+ Name: virtualenv
+ Version: 15.1.0
+ Summary: Virtual Python Environment builder
+ Home-page: https://virtualenv.pypa.io/
+-Author: Jannis Leidel, Carl Meyer and Brian Rosner
+-Author-email: python-virtualenv@groups.google.com
++Author: Ian Bicking
++Author-email: ianb@colorstudy.com
++Maintainer: Jannis Leidel, Carl Meyer and Brian Rosner
++Maintainer-email: python-virtualenv@groups.google.com
+ License: MIT
+ Description: Virtualenv
+         ==========
+diff --git a/virtualenv.py b/virtualenv.py
+index a174b8a..5699998 100755
+--- a/virtualenv.py
++++ b/virtualenv.py
+@@ -861,7 +861,10 @@ def install_wheel(project_names, py_executable, search_dirs=None,
+ 
+         import pip
+ 
+-        cert_data = pkgutil.get_data("pip._vendor.requests", "cacert.pem")
++        try:
++            cert_data = pkgutil.get_data("pip._vendor.requests", "cacert.pem")
++        except IOError:
++            cert_data = None
+         if cert_data is not None:
+             cert_file = tempfile.NamedTemporaryFile(delete=False)
+             cert_file.write(cert_data)

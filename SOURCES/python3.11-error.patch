@@ -1,0 +1,20 @@
+diff --git a/virtualenv.py b/virtualenv.py
+index e5d0883..34d2160 100755
+--- a/virtualenv.py
++++ b/virtualenv.py
+@@ -4,6 +4,15 @@
+ import os
+ import sys
+ 
++# The way virtualenv < 20 creates virtual environments
++# is not compatible with Python 3.11+ "frozen standard library modules"
++# https://docs.python.org/3.11/whatsnew/3.11.html#frozen-imports-static-code-objects
++if sys.version_info >= (3, 11):
++    venv_cmd = 'python{0.major}.{0.minor} -m venv'.format(sys.version_info)
++    sys.exit('ERROR: Virtual environments created by virtualenv < 20 '
++             'are not compatible with Python 3.11.\n'
++             'ERROR: Use `{}` instead.'.format(venv_cmd))
++
+ # If we are running in a new interpreter to create a virtualenv,
+ # we do NOT want paths from our existing location interfering with anything,
+ # So we remove this file's directory from sys.path - most likely to be
