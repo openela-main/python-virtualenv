@@ -1,0 +1,230 @@
+diff --git a/virtualenv.py b/virtualenv.py
+index 9854324..e5d0883 100755
+--- a/virtualenv.py
++++ b/virtualenv.py
+@@ -49,7 +49,8 @@ try:
+ except NameError:
+     basestring = str
+ 
+-py_version = 'python%s.%s' % (sys.version_info[0], sys.version_info[1])
++version = '%s.%s' % (sys.version_info[0], sys.version_info[1])
++py_version = 'python%s' % version
+ 
+ is_jython = sys.platform.startswith('java')
+ is_pypy = hasattr(sys, 'pypy_version_info')
+@@ -1012,13 +1013,13 @@ def change_prefix(filename, dst_prefix):
+ 
+     if is_darwin:
+         prefixes.extend((
+-            os.path.join("/Library/Python", sys.version[:3], "site-packages"),
++            os.path.join("/Library/Python", version, "site-packages"),
+             os.path.join(sys.prefix, "Extras", "lib", "python"),
+-            os.path.join("~", "Library", "Python", sys.version[:3], "site-packages"),
++            os.path.join("~", "Library", "Python", version, "site-packages"),
+             # Python 2.6 no-frameworks
+-            os.path.join("~", ".local", "lib","python", sys.version[:3], "site-packages"),
++            os.path.join("~", ".local", "lib","python", version, "site-packages"),
+             # System Python 2.7 on OSX Mountain Lion
+-            os.path.join("~", "Library", "Python", sys.version[:3], "lib", "python", "site-packages")))
++            os.path.join("~", "Library", "Python", version, "lib", "python", "site-packages")))
+ 
+     if hasattr(sys, 'real_prefix'):
+         prefixes.append(sys.real_prefix)
+@@ -1099,7 +1100,7 @@ def copy_required_modules(dst_prefix, symlink):
+             # special-case custom readline.so on OS X, but not for pypy:
+             if modname == 'readline' and sys.platform == 'darwin' and not (
+                     is_pypy or filename.endswith(join('lib-dynload', 'readline.so'))):
+-                dst_filename = join(dst_prefix, 'lib', 'python%s' % sys.version[:3], 'readline.so')
++                dst_filename = join(dst_prefix, 'lib', py_version, 'readline.so')
+             elif modname == 'readline' and sys.platform == 'win32':
+                 # special-case for Windows, where readline is not a
+                 # standard module, though it may have been installed in
+@@ -1398,8 +1399,7 @@ def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear, sy
+     if not is_win:
+         # Ensure that 'python', 'pythonX' and 'pythonX.Y' all exist
+         py_exe_version_major = 'python%s' % sys.version_info[0]
+-        py_exe_version_major_minor = 'python%s.%s' % (
+-            sys.version_info[0], sys.version_info[1])
++        py_exe_version_major_minor = py_version
+         py_exe_no_version = 'python'
+         required_symlinks = [ py_exe_no_version, py_exe_version_major,
+                          py_exe_version_major_minor ]
+@@ -1547,7 +1547,8 @@ def fix_local_scheme(home_dir, symlink=True):
+     except ImportError:
+         pass
+     else:
+-        if sysconfig._get_default_scheme() == 'posix_local':
++        get_scheme = getattr(sysconfig, 'get_default_scheme', None) or sysconfig._get_default_scheme
++        if get_scheme() == 'posix_local':
+             local_path = os.path.join(home_dir, 'local')
+             if not os.path.exists(local_path):
+                 os.mkdir(local_path)
+@@ -1575,7 +1576,7 @@ def fix_lib64(lib_dir, symlink=True):
+ 
+     logger.debug('This system uses lib64; symlinking lib64 to lib')
+ 
+-    assert os.path.basename(lib_dir) == 'python%s' % sys.version[:3], (
++    assert os.path.basename(lib_dir) == py_version, (
+         "Unexpected python lib dir: %r" % lib_dir)
+     lib_parent = os.path.dirname(lib_dir)
+     top_level = os.path.dirname(lib_parent)
+@@ -1637,7 +1638,7 @@ def make_environment_relocatable(home_dir):
+     fixup_pth_and_egg_link(home_dir)
+     ## FIXME: need to fix up distutils.cfg
+ 
+-OK_ABS_SCRIPTS = ['python', 'python%s' % sys.version[:3],
++OK_ABS_SCRIPTS = ['python', py_version,
+                   'activate', 'activate.bat', 'activate_this.py',
+                   'activate.fish', 'activate.csh']
+ 
+@@ -1647,7 +1648,7 @@ def fixup_scripts(home_dir, bin_dir):
+             '%s /c' % os.path.normcase(os.environ.get('COMSPEC', 'cmd.exe')),
+             '', '.exe')
+     else:
+-        new_shebang_args = ('/usr/bin/env', sys.version[:3], '')
++        new_shebang_args = ('/usr/bin/env', version, '')
+ 
+     # This is what we expect at the top of scripts:
+     shebang = '#!%s' % os.path.normcase(os.path.join(
+diff --git a/virtualenv_embedded/activate_this.py b/virtualenv_embedded/activate_this.py
+index f18193b..8272888 100644
+--- a/virtualenv_embedded/activate_this.py
++++ b/virtualenv_embedded/activate_this.py
+@@ -19,7 +19,7 @@ base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ if sys.platform == 'win32':
+     site_packages = os.path.join(base, 'Lib', 'site-packages')
+ else:
+-    site_packages = os.path.join(base, 'lib', 'python%s' % sys.version[:3], 'site-packages')
++    site_packages = os.path.join(base, 'lib', 'python%s.%s' % (sys.version_info[0], sys.version_info[1]), 'site-packages')
+ prev_sys_path = list(sys.path)
+ import site
+ site.addsitedir(site_packages)
+diff --git a/virtualenv_embedded/site.py b/virtualenv_embedded/site.py
+index 7969769..b3603ff 100644
+--- a/virtualenv_embedded/site.py
++++ b/virtualenv_embedded/site.py
+@@ -134,7 +134,7 @@ def addbuilddir():
+     """Append ./build/lib.<platform> in case we're running in the build dir
+     (especially for Guido :-)"""
+     from distutils.util import get_platform
+-    s = "build/lib.%s-%.3s" % (get_platform(), sys.version)
++    s = "build/lib.%s-%s.%s" % (get_platform(), sys.version_info[0], sys.version_info[1])
+     if hasattr(sys, 'gettotalrefcount'):
+         s += '-pydebug'
+     s = os.path.join(os.path.dirname(sys.path[-1]), s)
+@@ -162,7 +162,7 @@ def addpackage(sitedir, name, known_paths):
+         reset = 0
+     fullname = os.path.join(sitedir, name)
+     try:
+-        f = open(fullname, "rU")
++        f = open(fullname, "r")
+     except IOError:
+         return
+     try:
+@@ -222,21 +222,21 @@ def addsitepackages(known_paths, sys_prefix=sys.prefix, exec_prefix=sys.exec_pre
+ 
+                 if prefix.startswith("/System/Library/Frameworks/"): # Apple's Python
+ 
+-                    sitedirs = [os.path.join("/Library/Python", sys.version[:3], "site-packages"),
++                    sitedirs = [os.path.join("/Library/Python", "%s.%s" % (sys.version_info[0], sys.version_info[1]), "site-packages"),
+                                 os.path.join(prefix, "Extras", "lib", "python")]
+ 
+                 else: # any other Python distros on OSX work this way
+                     sitedirs = [os.path.join(prefix, "lib",
+-                                             "python" + sys.version[:3], "site-packages")]
++                                             "python" + "%s.%s" % (sys.version_info[0], sys.version_info[1]), "site-packages")]
+ 
+             elif os.sep == '/':
+                 sitedirs = [os.path.join(prefix,
+                                          "lib",
+-                                         "python" + sys.version[:3],
++                                         "python%s.%s" % (sys.version_info[0], sys.version_info[1]),
+                                          "site-packages"),
+                             os.path.join(prefix, "lib", "site-python"),
+-                            os.path.join(prefix, "python" + sys.version[:3], "lib-dynload")]
+-                lib64_dir = os.path.join(prefix, "lib64", "python" + sys.version[:3], "site-packages")
++                            os.path.join(prefix, "python%s.%s" % (sys.version_info[0], sys.version_info[1]), "lib-dynload")]
++                lib64_dir = os.path.join(prefix, "lib64", "python%s.%s" % (sys.version_info[0], sys.version_info[1]), "site-packages")
+                 if (os.path.exists(lib64_dir) and
+                     os.path.realpath(lib64_dir) not in [os.path.realpath(p) for p in sitedirs]):
+                     if _is_64bit:
+@@ -251,11 +251,11 @@ def addsitepackages(known_paths, sys_prefix=sys.prefix, exec_prefix=sys.exec_pre
+                     pass
+                 # Debian-specific dist-packages directories:
+                 sitedirs.append(os.path.join(prefix, "local/lib",
+-                                             "python" + sys.version[:3],
++                                             "python%s.%s" % (sys.version_info[0], sys.version_info[1]),
+                                              "dist-packages"))
+                 if sys.version[0] == '2':
+                     sitedirs.append(os.path.join(prefix, "lib",
+-                                                 "python" + sys.version[:3],
++                                                 "python%s.%s" % (sys.version_info[0], sys.version_info[1]),
+                                                  "dist-packages"))
+                 else:
+                     sitedirs.append(os.path.join(prefix, "lib",
+@@ -275,7 +275,7 @@ def addsitepackages(known_paths, sys_prefix=sys.prefix, exec_prefix=sys.exec_pre
+                             os.path.join(home,
+                                          'Library',
+                                          'Python',
+-                                         sys.version[:3],
++                                         '%s.%s' % (sys.version_info[0], sys.version_info[1]),
+                                          'site-packages'))
+             for sitedir in sitedirs:
+                 if os.path.isdir(sitedir):
+@@ -335,7 +335,7 @@ def addusersitepackages(known_paths):
+         else:
+             USER_BASE = joinuser(base, "Python")
+         USER_SITE = os.path.join(USER_BASE,
+-                                 "Python" + sys.version[0] + sys.version[2],
++                                 "Python%s%s" % (sys.version_info[0], sys.version_info[1]),
+                                  "site-packages")
+     else:
+         if env_base:
+@@ -343,7 +343,7 @@ def addusersitepackages(known_paths):
+         else:
+             USER_BASE = joinuser("~", ".local")
+         USER_SITE = os.path.join(USER_BASE, "lib",
+-                                 "python" + sys.version[:3],
++                                 "python%s.%s" % (sys.version_info[0], sys.version_info[1]),
+                                  "site-packages")
+ 
+     if ENABLE_USER_SITE and os.path.isdir(USER_SITE):
+@@ -351,7 +351,7 @@ def addusersitepackages(known_paths):
+     if ENABLE_USER_SITE:
+         for dist_libdir in ("lib", "local/lib"):
+             user_site = os.path.join(USER_BASE, dist_libdir,
+-                                     "python" + sys.version[:3],
++                                     "python%s.%s" % (sys.version_info[0], sys.version_info[1]),
+                                      "dist-packages")
+             if os.path.isdir(user_site):
+                 addsitedir(user_site, known_paths)
+@@ -426,7 +426,7 @@ class _Printer(object):
+             for filename in self.__files:
+                 filename = os.path.join(dir, filename)
+                 try:
+-                    fp = open(filename, "rU")
++                    fp = open(filename, "r")
+                     data = fp.read()
+                     fp.close()
+                     break
+@@ -581,9 +581,9 @@ def virtual_install_main_packages():
+     elif sys.platform == 'win32':
+         paths = [os.path.join(sys.real_prefix, 'Lib'), os.path.join(sys.real_prefix, 'DLLs')]
+     else:
+-        paths = [os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3])]
++        paths = [os.path.join(sys.real_prefix, 'lib', 'python%s.%s' % (sys.version_info[0], sys.version_info[1]))]
+         hardcoded_relative_dirs = paths[:] # for the special 'darwin' case below
+-        lib64_path = os.path.join(sys.real_prefix, 'lib64', 'python'+sys.version[:3])
++        lib64_path = os.path.join(sys.real_prefix, 'lib64', 'python%s.%s' % (sys.version_info[0], sys.version_info[1]))
+         if os.path.exists(lib64_path):
+             if _is_64bit:
+                 paths.insert(0, lib64_path)
+@@ -600,7 +600,7 @@ def virtual_install_main_packages():
+             # This is a non-multiarch aware Python.  Fallback to the old way.
+             arch = sys.platform
+         plat_path = os.path.join(sys.real_prefix, 'lib',
+-                                 'python'+sys.version[:3],
++                                 'python%s.%s' % (sys.version_info[0], sys.version_info[1]),
+                                  'plat-%s' % arch)
+         if os.path.exists(plat_path):
+             paths.append(plat_path)
